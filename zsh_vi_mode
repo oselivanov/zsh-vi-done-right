@@ -1,0 +1,218 @@
+# Author: Oleg Selivanov <oleg.a.selivanov@gmail.com>
+# Zsh vi-mode done right.
+# Collection of ad hoc stuff to make zsh vi-mode almost perfect.
+
+# I'm not pretend I know bash/zsh script well, I made this script for my own
+# needs and since it just works, it's fine to me.
+# That being said patches and fixes are VERY welcome!
+
+# Options:
+#   zsh_vi_i_am_home=1     # Show prompt in blue (for you own machine).
+#   zsh_vi_word_walking=1  # Use hjkl for Word-walking.
+
+# TODO(oleg): Setup autocomple for cd using bindkey -M viins $'\r' vi-enter.
+# TODO(oleg): Refactor this precmd/postcmd mess.
+# TODO(oleg): Fix all lines to fit in 80 chars.
+# TODO(oleg): If command returned no output don't put extra blank line.
+
+bindkey -v
+
+# Make terminal respond faster on esc key.
+# But in general it's not enough. See the \e bindings below.
+KEYTIMEOUT=1
+
+# Color shortcuts initialization.
+autoload -U colors
+colors
+
+# Don't use vi mode in backward delete word/char because it cannot delete
+# characters on the left of position you were in insert mode.
+zle -A .backward-kill-word vi-backward-kill-word
+zle -A .backward-delete-char vi-backward-delete-char
+
+# Just delete char in command mode on backspace.
+bindkey -M vicmd "^?" vi-backward-delete-char
+
+# Hack to prevent ignoring kl0$ keys in case you hit escape then a key from
+# command mode.
+bindkey -M vicmd "\e0" vi-beginning-of-line
+bindkey -M vicmd "\e$" vi-end-of-line
+bindkey -M vicmd "\ej" down-history
+bindkey -M vicmd "\ek" up-history
+bindkey -M viins "\e0" vi-beginning-of-line
+bindkey -M viins "\e$" vi-end-of-line
+bindkey -M viins "\ej" down-history
+bindkey -M viins "\ek" up-history
+
+# Word walking by default.
+if [ "$zsh_vi_word_walking" = "1" ]; then
+  bindkey -M vicmd h vi-backward-word
+  bindkey -M vicmd l vi-forward-word
+  bindkey -M viins "\eh" vi-backward-word
+  bindkey -M viins "\el" vi-forward-word
+  bindkey -M vicmd "\eh" vi-backward-word
+  bindkey -M vicmd "\el" vi-forward-word
+fi
+
+# Setup incremental backward search.
+bindkey -M vicmd '/' history-incremental-search-backward
+bindkey -M vicmd "\e/" history-incremental-search-backward
+bindkey -M isearch '^k' history-incremental-search-backward
+bindkey -M isearch '^j' history-incremental-search-forward
+
+# Use hjkl in completion menu.
+bindkey -M menuselect 'j' vi-down-line-or-history
+bindkey -M menuselect 'k' vi-up-line-or-history
+bindkey -M menuselect 'h' vi-backward-char
+bindkey -M menuselect 'l' vi-forward-char
+
+# Use ctrl-h to go one level up.
+vi-go-back() {
+  cd ..
+  zle vi-insert
+  zle -I
+  echo
+  FIRST_LINE=1
+  precmd
+  FIRST_LINE=0
+}
+zle -N vi-go-back
+bindkey -M viins "^h" vi-go-back
+bindkey -M vicmd "^h" vi-go-back
+
+# Don't use <c-p> and <c-n> by default.
+bindkey -r "^n"
+bindkey -r "^p"
+
+# Disable moving one char back after switching to insert mode.
+vi-esc-fix() {
+  zle vi-cmd-mode
+  zle forward-char
+}
+zle -N vi-esc-fix
+bindkey -r "\e"
+bindkey -M viins "\e" vi-esc-fix
+
+# Hit e in command mode to edit current command line.
+autoload -U edit-command-line
+zle -N edit-command-line
+bindkey -M vicmd e edit-command-line
+
+# Setup cool prompt.
+setopt promptsubst
+vim_ins_mode="-i- "
+vim_cmd_mode="-n- "
+vim_mode=$vim_ins_mode
+PROMPT=$'${vim_mode}➜ '
+FIRST_LINE=1
+
+function zle-line-init {
+  FIRST_LINE=0
+  last_command=""
+  timestamp=$(date +%s)
+  interrupted=0
+}
+function zle-line-finish {
+  vim_mode=$vim_ins_mode
+  zle reset-prompt
+}
+function zle-keymap-select {
+  vim_mode="${${KEYMAP/vicmd/${vim_cmd_mode}}/(main|viins)/${vim_ins_mode}}"
+  zle reset-prompt
+}
+zle -N zle-line-init
+zle -N zle-line-finish
+zle -N zle-keymap-select
+
+# Show git branch and current python virtualenv in prompt.
+WORKON_HOME=$HOME/.venvs
+export VIRTUAL_ENV_DISABLE_PROMPT=1
+workon() {
+  . $HOME/.venvs/$1/bin/activate
+  export VIRTUAL_ENV=$HOME/.venvs/$1
+}
+
+# It's ugly I know ,)
+last_command=""
+timestamp=$(date +%s)
+interrupted=0
+
+preexec () {
+  last_command="$1"
+  timestamp=$(date +%s)
+  interrupted=0
+
+  title="$last_command"
+  if [ -n "`declare -f -F cmd-to-pretty-tab-name`" ]; then
+    pretty_name=$(cmd-to-pretty-tab-name "$title")
+    if [ -n "$pretty_name" ]; then
+      title=$pretty_name
+    fi
+  fi
+  prefix=
+  if [ "$zsh_vi_i_am_home" != "1" ]; then
+    prefix="ssh / "
+  fi
+  echo -en '\033k'"$title"'\033\\'
+  echo
+}
+
+osascript_exists="$(which osascript > /dev/null && echo 1)"
+# We're using precmd to avoid a bug in zsh. Due this bug zsh redraw the prompt
+# wrong when zle reset-prompt in called in insert mode.
+precmd () {
+  dir=$(pwd)
+  if [ "$dir" = "/Users/oleg" ]; then
+    base="~"
+  else
+    base=$(basename $dir)
+  fi
+  prefix=
+  if [ "$zsh_vi_i_am_home" != "1" ]; then
+    prefix="ssh / "
+  fi
+  echo -en '\033k'"${prefix}dir: $base"'\033\\'
+
+  seconds=$(($(date +%s)-$timestamp))
+  if [ $seconds -gt 3 ] && [ $interrupted = 0 ] && [ "$last_command" != "" ] && [ "$osascript_exists" = "1" ]; then
+    osascript -e "display notification \"$last_command\" with title \"Finished\""
+  fi
+
+  [ -f "$(pwd)/.virtualenv" ] && workon $(cat "$(pwd)/.virtualenv")
+  local GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  [[ ! -z $GIT_BRANCH ]] && \
+      local PROMPT_GIT="(git: %{$fg[blue]%}$GIT_BRANCH%{${reset_color}%}) "
+  [[ ! -z $VIRTUAL_ENV ]] && \
+      local PROMPT_VENV="(venv: %{$fg[blue]%}${VIRTUAL_ENV#$WORKON_HOME/}%{${reset_color}%}) "
+  if [ $FIRST_LINE -eq "0" ]; then
+    echo
+  fi
+
+  main_color="$fg[red]"
+  if [ "$zsh_vi_i_am_home" = "1" ]; then
+    main_color="$fg[blue]"
+  fi
+  print -rP "%{$main_color%}%n@%m %{$fg[yellow]%}%~ %{${reset_color}%}$PROMPT_GIT$PROMPT_VENV"
+}
+
+# Reset prompt when C-c was pressed.
+TRAPINT () {
+  interrupted=1
+  vim_mode="${${KEYMAP/vicmd/${vim_cmd_mode}}/(main|viins)/${vim_ins_mode}}"
+  zle && zle reset-prompt && zle vi-insert
+  return 1
+}
+
+# Clear screen w/o losing the data.
+clear-screen() {
+  vim_mode=$vim_ins_mode
+  zle vi-insert
+  zle -I
+  repeat $((LINES+1)) echo
+  clear
+  FIRST_LINE=1
+  timestamp=$(date +%s)
+  precmd
+  FIRST_LINE=0
+}
+zle -N clear-screen
