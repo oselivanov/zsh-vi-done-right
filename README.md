@@ -1,11 +1,10 @@
-zsh-vi-done-right
-=================
+# zsh-vi-done-right
 
 Complete vi mode for zsh.
 
 ![zsh-vi-done-right](https://github.com/oselivanov/zsh-vi-done-right/raw/master/demo.gif)
 
-Features:
+## Features:
  - Really cool 2-line colored prompt with current mode (command/insert) showing.
    Having 2 lines is very useful because position of the command is consistent.
  - Prompt with main color changing (blue to red) when using .zsh_vi over the ssh
@@ -23,18 +22,19 @@ Features:
  - Clear screen with ^L without losing previous lines.
  - Showing finishing notification for long-running commands in Mac OS.
 
-Installation:
-1)
+## Installation:
+1.    
+      ```sh
+      mkdir -p ~/.zsh
+      cd ~/.zsh
+      git clone https://github.com/oselivanov/zsh-vi-done-right.git
+      ```
 
-  mkdir -p ~/.zsh
-  cd ~/.zsh
-  git clone https://github.com/oselivanov/zsh-vi-done-right.git
+2. To your .zshrc add
 
-2) Add
-
-  # zsh_vi_word_walking=1  # Optional.
-  if [ -f ~/.zsh/zsh_vi_mode ]; then
-    . ~/.zsh/zsh_vi_mode
-  fi
-
-to your .zshrc
+      ```sh
+      # zsh_vi_word_walking=1  # Optional.
+      if [ -f ~/.zsh/zsh_vi_mode ]; then
+         . ~/.zsh/zsh_vi_mode
+      fi
+      ```
