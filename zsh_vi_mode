@@ -136,6 +136,7 @@ workon() {
 last_command=""
 timestamp=$(date +%s)
 interrupted=0
+sticky=0
 
 preexec () {
   last_command="$1"
@@ -149,15 +150,12 @@ preexec () {
       title=$pretty_name
     fi
   fi
-  prefix=
-  if [ "$zsh_vi_i_am_home" != "1" ]; then
-    prefix="ssh / "
+  if [ "$zsh_vi_i_am_home" = "1" ]; then
+    echo -en '\033k'"$title"'\033\\'
+    echo
   fi
-  echo -en '\033k'"$title"'\033\\'
-  echo
 }
 
-osascript_exists="$(which osascript > /dev/null && echo 1)"
 # We're using precmd to avoid a bug in zsh. Due this bug zsh redraw the prompt
 # wrong when zle reset-prompt in called in insert mode.
 precmd () {
@@ -167,15 +165,14 @@ precmd () {
   else
     base=$(basename $dir)
   fi
-  prefix=
-  if [ "$zsh_vi_i_am_home" != "1" ]; then
-    prefix="ssh / "
-  fi
-  echo -en '\033k'"${prefix}dir: $base"'\033\\'
 
   seconds=$(($(date +%s)-$timestamp))
-  if [ $seconds -gt 3 ] && [ $interrupted = 0 ] && [ "$last_command" != "" ] && [ "$osascript_exists" = "1" ]; then
-    osascript -e "display notification \"$last_command\" with title \"Finished\""
+  if [ $seconds -gt 10 ] && [ "$last_command" != "" ]; then
+    sticky=1
+  fi
+
+  if [ "$zsh_vi_i_am_home" = "1" ] && [ "$sticky" != "1" ]; then
+    echo -en '\033k'"dir: $base"'\033\\'
   fi
 
   [ -f "$(pwd)/.virtualenv" ] && workon $(cat "$(pwd)/.virtualenv")
