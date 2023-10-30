@@ -47,11 +47,19 @@ bindkey -M viins "\ek" up-history
 # Word walking by default.
 if [ "$zsh_vi_word_walking" = "1" ]; then
   bindkey -M vicmd h vi-backward-word
+  bindkey -M vicmd H vi-backward-word
   bindkey -M vicmd l vi-forward-word
+  bindkey -M vicmd L vi-forward-word-end
+
   bindkey -M viins "\eh" vi-backward-word
+  bindkey -M viins "\eH" vi-backward-word
   bindkey -M viins "\el" vi-forward-word
+  bindkey -M viins "\eL" vi-forward-word-end
+
   bindkey -M vicmd "\eh" vi-backward-word
+  bindkey -M vicmd "\eH" vi-backward-word
   bindkey -M vicmd "\el" vi-forward-word
+  bindkey -M vicmd "\eL" vi-forward-word-end
 fi
 
 # Setup incremental backward search.
@@ -94,9 +102,10 @@ bindkey -r "\e"
 bindkey -M viins "\e" vi-esc-fix
 
 # Hit e in command mode to edit current command line.
+export VISUAL="vim +star"
 autoload -U edit-command-line
 zle -N edit-command-line
-bindkey -M vicmd e edit-command-line
+bindkey -M vicmd E edit-command-line
 
 # Setup cool prompt.
 setopt promptsubst
@@ -128,9 +137,16 @@ zle -N zle-keymap-select
 WORKON_HOME=$HOME/.venvs
 export VIRTUAL_ENV_DISABLE_PROMPT=1
 workon() {
-  . $HOME/.venvs/$1/bin/activate
-  export VIRTUAL_ENV=$HOME/.venvs/$1
+  . $WORKON_HOME/$1/bin/activate
+  export VIRTUAL_ENV=$WORKON_HOME/$1
 }
+
+workfor() {
+  . $HOME/.aws_$1
+}
+
+REAL_HOME=$HOME
+HOME_PREFIX=$(dirname $HOME)
 
 # It's ugly I know ,)
 last_command=""
@@ -138,57 +154,89 @@ timestamp=$(date +%s)
 interrupted=0
 sticky=0
 
+title () {
+  echo -en '\033k'"$1"'\033\\'
+  sticky=1
+}
+
+nonsticky () {
+  sticky=0
+}
+
 preexec () {
   last_command="$1"
   timestamp=$(date +%s)
   interrupted=0
 
-  title="$last_command"
+  tab_title="$last_command"
   if [ -n "`declare -f -F cmd-to-pretty-tab-name`" ]; then
-    pretty_name=$(cmd-to-pretty-tab-name "$title")
+    pretty_name=$(cmd-to-pretty-tab-name "$tab_title")
     if [ -n "$pretty_name" ]; then
-      title=$pretty_name
+      tab_title=$pretty_name
     fi
   fi
-  if [ "$zsh_vi_i_am_home" = "1" ]; then
-    echo -en '\033k'"$title"'\033\\'
+  if [ "$zsh_vi_i_am_home" = "1" ] && [ "$sticky" != "1" ]; then
+    echo -en '\033k'"$tab_title"'\033\\'
     echo
+  fi
+  if [[ $last_command != *git* ]] && [[ $last_command != *vim* ]] && \
+     [[ $last_command != *ipython* ]] && [[ $last_command != *jupyter* ]]; then
+    if [[ "$REAL_HOME" = "/root" ]]; then
+      export HOME=/root
+    else
+      export HOME=$HOME_PREFIX/$USER
+    fi
   fi
 }
 
 # We're using precmd to avoid a bug in zsh. Due this bug zsh redraw the prompt
 # wrong when zle reset-prompt in called in insert mode.
 precmd () {
+  export HOME=$REAL_HOME
+
   dir=$(pwd)
-  if [ "$dir" = "/Users/oleg" ]; then
+  if [ "$dir" = "$HOME" ]; then
     base="~"
   else
     base=$(basename $dir)
   fi
 
   seconds=$(($(date +%s)-$timestamp))
-  if [ $seconds -gt 10 ] && [ "$last_command" != "" ]; then
-    sticky=1
+  if [ $seconds -gt 60 ] && [ "$last_command" != "" ]; then
+    if [[ "$last_command" = 'ss '* ]]; then
+      sticky=1
+    fi
   fi
 
   if [ "$zsh_vi_i_am_home" = "1" ] && [ "$sticky" != "1" ]; then
-    echo -en '\033k'"dir: $base"'\033\\'
+    if [[ "$dir" != '/Volumes/'* ]]; then
+      echo -en '\033k'"local: $base"'\033\\'
+    else
+      echo -en '\033k'"remote: $base"'\033\\'
+    fi
   fi
 
-  [ -f "$(pwd)/.virtualenv" ] && workon $(cat "$(pwd)/.virtualenv")
-  local GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  if [ $FIRST_LINE -eq "0" ]; then
+    echo
+  fi
+
+  if [[ "$dir" != '/Volumes/'* ]]; then
+    [ -f "$(pwd)/.virtualenv" ] && workon $(cat "$(pwd)/.virtualenv")
+    local GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  else
+    local GIT_BRANCH="N/A"
+  fi
+
   [[ ! -z $GIT_BRANCH ]] && \
       local PROMPT_GIT="(git: %{$fg[blue]%}$GIT_BRANCH%{${reset_color}%}) "
   [[ ! -z $VIRTUAL_ENV ]] && \
       local PROMPT_VENV="(venv: %{$fg[blue]%}${VIRTUAL_ENV#$WORKON_HOME/}%{${reset_color}%}) "
-  if [ $FIRST_LINE -eq "0" ]; then
-    echo
-  fi
 
   main_color="$fg[red]"
   if [ "$zsh_vi_i_am_home" = "1" ]; then
     main_color="$fg[blue]"
   fi
+
   print -rP "%{$main_color%}%n@%m %{$fg[yellow]%}%~ %{${reset_color}%}$PROMPT_GIT$PROMPT_VENV"
 }
 
